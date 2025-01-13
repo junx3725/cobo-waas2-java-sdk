@@ -1,16 +1,4 @@
-# This workflow uses actions that are not certified by GitHub.
-# They are provided by a third-party and are governed by
-# separate terms of service, privacy policy, and support
-# documentation.
-
-# A sample workflow which sets up periodic OSV-Scanner scanning for vulnerabilities,
-# in addition to a PR check which fails if new vulnerabilities are introduced.
-#
-# For more examples and options, including how to ignore specific vulnerabilities,
-# see https://google.github.io/osv-scanner/github-action/
-
 name: OSV-Scanner
-
 on:
   pull_request:
     branches: [ "master" ]
@@ -22,27 +10,41 @@ on:
     branches: [ "master" ]
 
 permissions:
-  # Require writing security events to upload SARIF file to security tab
   security-events: write
-  # Read commit contents
   contents: read
 
 jobs:
-  scan-scheduled:
-    if: ${{ github.event_name == 'push' || github.event_name == 'schedule' }}
-    uses: "google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@1f1242919d8a60496dd1874b24b62b2370ed4c78" # v1.7.1
-    with:
-      # Example of specifying custom arguments
-      scan-args: |-
-        -r
-        --skip-git
-        ./
-  scan-pr:
-    if: ${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' }}
-    uses: "google/osv-scanner-action/.github/workflows/osv-scanner-reusable-pr.yml@1f1242919d8a60496dd1874b24b62b2370ed4c78" # v1.7.1
-    with:
-      # Example of specifying custom arguments
-      scan-args: |-
-        -r
-        --skip-git
-        ./
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Set up JDK
+        uses: actions/setup-java@v3
+        with:
+          java-version: '11'  # 或你项目使用的 Java 版本
+          distribution: 'temurin'
+          
+      - name: Build with Maven
+        run: mvn clean package -DskipTests
+        
+      - name: Run OSV Scanner
+        uses: google/osv-scanner/actions/maven@main
+        with:
+          # 指定 Maven 项目相关配置
+          maven-args: '-f pom.xml'
+          scan-args: |-
+            -r
+            --skip-git
+            --lockfile=pom.xml
+            ./
+            
+      # 可选：生成 SARIF 报告
+      - name: Generate SARIF file
+        run: |
+          osv-scanner -r --format sarif ./pom.xml > osv-results.sarif
+          
+      - name: Upload SARIF file
+        uses: github/codeql-action/upload-sarif@v2
+        with:
+          sarif_file: osv-results.sarif
